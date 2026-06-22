@@ -174,7 +174,7 @@
     <button class="btn" id="logBtn" disabled>Log spend</button>
   </div>
 
-  <div class="sec"><h3>Rolling 14 days</h3><span class="hint">7 back · 6 ahead</span></div>
+  <div class="sec"><h3>Last 14 days</h3><span class="hint">today at top</span></div>
   <div class="roll" id="roll"></div>
 
   <div class="sec"><h3>Recent entries</h3><span class="hint" id="entryCount"></span></div>
@@ -323,21 +323,15 @@
   function renderRoll(){
     var box=document.getElementById("roll"); box.innerHTML="";
     var t=today(); var pool=poolBalance();
-    for(var off=-7; off<=6; off++){
+    var start=fromKey(state.startDate);
+    for(var off=0; off>=-13; off--){
       var d=addDays(t,off); var key=toKey(d);
-      var start=fromKey(state.startDate);
       var row=document.createElement("div"); row.className="day";
       var dl='<div class="dl"><div class="dow">'+DOW[d.getDay()]+'</div><div class="dt">'+(d.getMonth()+1)+'/'+d.getDate()+'</div></div>';
 
       if(d<start){
         row.className+=" pre";
         row.innerHTML=dl+'<div class="mid"><div class="tag">before tracking</div></div><div class="bal">—</div>';
-      } else if(off<0){
-        var sp=spentOn(key); var bal=balanceEndOf(key);
-        var dd=state.allowance-sp;
-        row.innerHTML=dl+'<div class="mid"><div class="spent num">'+money0(sp)+' spent</div>'+
-          '<div class="meta">'+(dd>=0?"+":"−")+"$"+Math.abs(Math.round(dd))+' day</div></div>'+
-          '<div class="bal num '+(bal>=0?"pos":"neg")+'">'+money0(bal)+'</div>';
       } else if(off===0){
         row.className+=" today";
         var sp2=spentOn(key);
@@ -345,10 +339,11 @@
           '<div class="meta">today · pool now</div></div>'+
           '<div class="bal num '+(pool>=0?"pos":"neg")+'">'+money0(pool)+'</div>';
       } else {
-        row.className+=" future";
-        var proj=pool+off*state.allowance;
-        row.innerHTML=dl+'<div class="mid"><div class="tag">projected (no spend)</div></div>'+
-          '<div class="bal num '+(proj>=0?"pos":"neg")+'">'+money0(proj)+'</div>';
+        var sp=spentOn(key); var bal=balanceEndOf(key);
+        var dd=state.allowance-sp;
+        row.innerHTML=dl+'<div class="mid"><div class="spent num">'+money0(sp)+' spent</div>'+
+          '<div class="meta">'+(dd>=0?"+":"−")+"$"+Math.abs(Math.round(dd))+' day</div></div>'+
+          '<div class="bal num '+(bal>=0?"pos":"neg")+'">'+money0(bal)+'</div>';
       }
       box.appendChild(row);
     }
