@@ -129,6 +129,19 @@
   .derive .dk{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em;}
   .derive .dv{font-size:17px; font-weight:700; margin-top:3px;}
   .row2{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .catlist{display:flex; flex-direction:column; gap:8px; margin-bottom:10px;}
+  .catrow{display:flex; align-items:center; justify-content:space-between; background:var(--bg);
+    border:1px solid var(--line); border-radius:11px; padding:11px 12px 11px 14px;}
+  .catrow .cn{font-size:14.5px; font-weight:500;}
+  .catrow.sweep .cn{color:var(--warn);}
+  .catrm{background:transparent; border:0; color:var(--muted2); font-size:17px; padding:2px 4px 2px 12px;}
+  .catadd{display:flex; gap:8px;}
+  .catadd input{flex:1; background:var(--bg); border:1px solid var(--line); color:var(--text);
+    border-radius:11px; padding:12px 13px; font-size:15px; font-family:inherit; outline:0;}
+  .catadd input::placeholder{color:var(--muted2);}
+  .addbtn{flex-shrink:0; border:0; border-radius:11px; padding:0 18px; font-size:15px; font-weight:700;
+    background:var(--pos); color:#06241a;}
+  .addbtn:disabled{background:var(--surface2); color:var(--muted2);}
   .mini{font-size:12px; color:var(--muted2); margin-top:14px; line-height:1.5;}
 
   .toast{position:fixed; left:50%; bottom:calc(24px + env(safe-area-inset-bottom)); transform:transl(-50%,20px);
@@ -201,6 +214,15 @@
     <input id="setStart" type="date">
   </div>
 
+  <div class="field">
+    <label>Categories</label>
+    <div id="catList" class="catlist"></div>
+    <div class="catadd">
+      <input id="newCat" type="text" placeholder="Add a category" maxlength="18" autocomplete="off">
+      <button id="addCat" class="addbtn">Add</button>
+    </div>
+  </div>
+
   <button class="btn" id="saveSettings" style="margin-bottom:14px;">Save settings</button>
 
   <div class="row2">
@@ -220,7 +242,7 @@
 (function(){
   "use strict";
   var KEY = "pool_state_v1";
-  var CATS = ["Groceries","Work food","Carrie","Golf","Restaurants","Gas","Amazon","Other","Savings sweep"];
+  var DEFAULT_CATS = ["Groceries","Work food","Golf","Restaurants","Gas","Amazon","Other","Savings sweep"];
 
   // ---------- date helpers (local, noon-anchored to dodge DST) ----------
   function pad(n){return (n<10?"0":"")+n;}
@@ -249,11 +271,14 @@
     if(raw){ try{ return JSON.parse(raw); }catch(e){} }
     // first run seed — matches our chat: started 6/22/2026, $40/day, Short Stop $9.06
     return {
-      startDate:"2026-06-22",
+      startDate:toKey(today()),
       allowance:40,
-      entries:[ {id:1, date:"2026-06-22", item:"Short Stop", cat:"Work food", amt:9.06} ]
+      cats:DEFAULT_CATS.slice(),
+      entries:[]
     };
   }
+  // migration: older saves won't have a cats list
+  if(!Array.isArray(state.cats) || !state.cats.length) state.cats = DEFAULT_CATS.slice();
   function save(){ try{ localStorage.setItem(KEY,JSON.stringify(state)); }catch(e){ alert("Could not save — storage blocked."); } }
 
   // ---------- core math ----------
@@ -376,17 +401,25 @@
 
   // ---------- chips ----------
   var chipBox=document.getElementById("chips");
-  CATS.forEach(function(cat){
-    var b=document.createElement("button");
-    b.className="chip"+(cat==="Savings sweep"?" sweep":"")+(cat===selCat?" on":"");
-    b.textContent=cat;
-    b.onclick=function(){
-      selCat=cat;
-      Array.prototype.forEach.call(chipBox.children,function(ch){ ch.classList.remove("on"); });
-      b.classList.add("on");
-    };
-    chipBox.appendChild(b);
-  });
+  function ensureSelValid(){
+    if(state.cats.indexOf(selCat)===-1) selCat = state.cats.length ? state.cats[0] : "";
+  }
+  function renderChips(){
+    ensureSelValid();
+    chipBox.innerHTML="";
+    state.cats.forEach(function(cat){
+      var b=document.createElement("button");
+      b.className="chip"+(cat==="Savings sweep"?" sweep":"")+(cat===selCat?" on":"");
+      b.textContent=cat;
+      b.onclick=function(){
+        selCat=cat;
+        Array.prototype.forEach.call(chipBox.children,function(ch){ ch.classList.remove("on"); });
+        b.classList.add("on");
+      };
+      chipBox.appendChild(b);
+    });
+  }
+  renderChips();
 
   // ---------- add flow ----------
   var amtEl=document.getElementById("amt"), itemEl=document.getElementById("item"),
@@ -416,12 +449,52 @@
     document.getElementById("setAllow").value=state.allowance;
     document.getElementById("setStart").value=state.startDate;
     deriveAllow();
+    renderCatList();
     document.getElementById("meta").textContent="Tracking since "+state.startDate+" · "+state.entries.length+" entries stored locally.";
     scrim.classList.add("on"); sheet.classList.add("on");
   }
   function closeSheet(){ scrim.classList.remove("on"); sheet.classList.remove("on"); }
   document.getElementById("openSettings").onclick=openSheet;
   scrim.onclick=closeSheet;
+
+  // ---------- category manager ----------
+  var catListEl=document.getElementById("catList"),
+      newCatEl=document.getElementById("newCat"),
+      addCatBtn=document.getElementById("addCat");
+  function renderCatList(){
+    catListEl.innerHTML="";
+    state.cats.forEach(function(cat){
+      var row=document.createElement("div");
+      row.className="catrow"+(cat==="Savings sweep"?" sweep":"");
+      var rm = state.cats.length>1
+        ? '<button class="catrm" data-cat="'+escapeHtml(cat)+'" aria-label="Remove">✕</button>'
+        : '';
+      row.innerHTML='<span class="cn">'+escapeHtml(cat)+'</span>'+rm;
+      catListEl.appendChild(row);
+    });
+    Array.prototype.forEach.call(catListEl.querySelectorAll(".catrm"),function(b){
+      b.onclick=function(){
+        var cat=b.getAttribute("data-cat");
+        state.cats=state.cats.filter(function(c){return c!==cat;});
+        save(); ensureSelValid(); renderChips(); renderCatList();
+        toast("Removed “"+cat+"”");
+      };
+    });
+  }
+  function canAdd(){
+    var v=newCatEl.value.trim();
+    return v.length>0 && state.cats.map(function(c){return c.toLowerCase();}).indexOf(v.toLowerCase())===-1;
+  }
+  newCatEl.addEventListener("input",function(){ addCatBtn.disabled=!canAdd(); });
+  addCatBtn.disabled=true;
+  function doAddCat(){
+    if(!canAdd()) return;
+    state.cats.push(newCatEl.value.trim());
+    save(); renderChips(); renderCatList();
+    newCatEl.value=""; addCatBtn.disabled=true;
+  }
+  addCatBtn.onclick=doAddCat;
+  newCatEl.addEventListener("keydown",function(e){ if(e.key==="Enter"){ e.preventDefault(); doAddCat(); } });
 
   function deriveAllow(){
     var a=parseFloat(document.getElementById("setAllow").value)||0;
@@ -453,7 +526,8 @@
       try{
         var d=JSON.parse(r.result);
         if(d && d.entries && typeof d.allowance!=="undefined" && d.startDate){
-          state=d; save(); render(); closeSheet(); toast("Backup restored");
+          if(!Array.isArray(d.cats) || !d.cats.length) d.cats=DEFAULT_CATS.slice();
+          state=d; save(); renderChips(); render(); closeSheet(); toast("Backup restored");
         } else { toast("Not a valid backup", true); }
       }catch(err){ toast("Could not read file", true); }
     };
@@ -463,8 +537,8 @@
   document.getElementById("resetBtn").onclick=function(){
     if(confirm("Erase ALL data on this device? This cannot be undone. Export a backup first if unsure.")){
       try{ localStorage.removeItem(KEY); }catch(e){}
-      state={startDate:toKey(today()),allowance:state.allowance,entries:[]};
-      save(); render(); closeSheet(); toast("All data erased");
+      state={startDate:toKey(today()),allowance:state.allowance,cats:(state.cats&&state.cats.length?state.cats.slice():DEFAULT_CATS.slice()),entries:[]};
+      save(); renderChips(); render(); closeSheet(); toast("All data erased");
     }
   };
 
